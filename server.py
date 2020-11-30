@@ -143,6 +143,9 @@ import re
 # The very last bit (the (/.+)) should be more specific, but I couldn't get it to work.
 # ^(?:([^:/?#]+)://)?([a-zA-Z]+|[0-9]+|[$-_@.&+]+|[!*\(\),]+|(?:%[0-9a-fA-F][0-9a-fA-F])+)(?::([0-9]+))(/.+)?
 
+import ssl
+import random
+
 regex = "^(?:([^:/?#]+)://)?([a-zA-Z]+|[0-9]+|[$-_@.&+]+|[!*\(\),]+|(?:%[0-9a-fA-F][0-9a-fA-F])+)(?::([0-9]+))(/.+)?"
 url_parser = re.compile(regex, re.I)
 
@@ -151,9 +154,10 @@ s.bind(("127.0.0.1", 1080))
 s.listen(1)
 
 def handleConnection(conn, addr):
-    print(addr, conn)
+    ID = random.randint(1000, 9999)
+    print(ID, addr, conn)
     resp = conn.recv(3) # receive 3 bytes
-    print(resp) # blocking while waits for message
+    print(ID, resp) # blocking while waits for message
     # Initial packet sent by clientis b"\x05\x01\x00"
     # \x05 is socks version (5)
     # \x01 is number of auth methods client supports
@@ -221,88 +225,293 @@ def handleConnection(conn, addr):
 
                                 requested_address = (requested_IPv4_address, requested_port)
 
-                                returned_address = bytes([int(i) for i in requested_address[0].split(".")])
-                                returned_port = int.to_bytes(requested_address[1], 2, byteorder="big")
+                                if requested_address[0] != "52.35.6.89" and requested_address[0] != "172.217.18.164":
 
-                                # So, after we parse that packet,
-                                # SOCKS proxy sends back the request packet (0x05, 0x00, 0x00, 0x01, <B_HOST>, <B_PORT>).
-                                # This is for the status of the request by the client to the proxy:-
-                                #
-                                # The Second Byte 0x00 is the status field. It is one byte. Meaning the request was granted.
-                                # The Third Byte 0x00 is a reserved byte. It must be 0x00 and 1 byte.
-                                # The Fourth Byte 0x01 is the address type of desired HOST and 1 byte. In case of CONNECT,
-                                #   this is followed by the binded IP address for the desired HOST, to give the client the
-                                #   detail of the DNS resolution.
-                                # The last Byte is port number in a network byte order, 2 bytes
-                                #
-                                # After this, the connection takes place all the coming data from client A is transferred
-                                #   to client B and vice versa. This way the SOCKS proxy works as a general framework proxy
-                                #   and handle most PROTOCOL with its security features.
+                                    returned_address = bytes([int(i) for i in requested_address[0].split(".")])
+                                    returned_port = int.to_bytes(requested_address[1], 2, byteorder="big")
 
-                                # \x05 == SOCKS5
-                                # \x00 == request granted
-                                # \x00 == reserved, must always be \x00 and only 1 byte
-                                # \x01 == address type (given to us earlier, in the second packet, so we're just regurgitating it back to the client)
-                                # B_HOST == IP of target host. \x01 connection type (IPv4 address) means we just regurgitate it back to the client
-                                # B_PORT == PORT of target host. We just send it back to the client.
+                                    # So, after we parse that packet,
+                                    # SOCKS proxy sends back the request packet (0x05, 0x00, 0x00, 0x01, <B_HOST>, <B_PORT>).
+                                    # This is for the status of the request by the client to the proxy:-
+                                    #
+                                    # The Second Byte 0x00 is the status field. It is one byte. Meaning the request was granted.
+                                    # The Third Byte 0x00 is a reserved byte. It must be 0x00 and 1 byte.
+                                    # The Fourth Byte 0x01 is the address type of desired HOST and 1 byte. In case of CONNECT,
+                                    #   this is followed by the binded IP address for the desired HOST, to give the client the
+                                    #   detail of the DNS resolution.
+                                    # The last Byte is port number in a network byte order, 2 bytes
+                                    #
+                                    # After this, the connection takes place all the coming data from client A is transferred
+                                    #   to client B and vice versa. This way the SOCKS proxy works as a general framework proxy
+                                    #   and handle most PROTOCOL with its security features.
 
-                                # We can use this server to remap routes between IP addresses and ports, if desired.
-                                # But if we want the proxy to be transparent, we just forward the connections as is.
+                                    # \x05 == SOCKS5
+                                    # \x00 == request granted
+                                    # \x00 == reserved, must always be \x00 and only 1 byte
+                                    # \x01 == address type (given to us earlier, in the second packet, so we're just regurgitating it back to the client)
+                                    # B_HOST == IP of target host. \x01 connection type (IPv4 address) means we just regurgitate it back to the client
+                                    # B_PORT == PORT of target host. We just send it back to the client.
 
-                                returned_response = b"".join([b"\x05\x00\x00\x01", returned_address, returned_port])
-
-                                # conn.send(b"\x05\x00\x00\x01", <B_HOST>, <B_PORT>")
-                                print("sending")
-                                print(conn.send(returned_response))
-                                print("bytes")
-                                print("creating socket")
-                                forwarding_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                                forwarding_socket.bind(("0.0.0.0", 0))
-                                forwarding_socket.connect(requested_address)
-                                print("starting loop")
-                                while True:
-                                    print("getting from client")
-                                    client_request = conn.recv(50000) # HTTP request is seen here
-                                    if not client_request: break
-                                    print(client_request)
-
-                                    print("forwarding prior message to target serer", requested_address)
-                                    forwarding_socket.send(client_request)
-                                    while True:
-                                        print("getting data from target server", requested_address)
-                                        forwarding_data = forwarding_socket.recv(50000)
-                                        if not forwarding_data: break
-                                        print("target server {}:{} sent".format(requested_address[0],requested_address[1]))
-                                        print(forwarding_data)
-                                        print("forwarding above data from target server {}:{} to client".format(requested_address[0],requested_address[1]))
-                                        conn.send(forwarding_data)
-                                    break
+                                    # We can use this server to remap routes between IP addresses and ports, if desired.
+                                    # But if we want the proxy to be transparent, we just forward the connections as is.
 
                                     # Works for HTTP connections As if right now
 
-                                    # For HTTPS connections:
-                                    # You generate the CONNECT request in your SOCKS proxy
-                                    # and therefore you should keep the response to this
-                                    # request to yourself and not forward it to the
-                                    # client. What you should do:
-                                    #
-                                    # If you receive the start of the SSL handshake from
-                                    # the client ("\x16\x03... ") you should buffer it.
+                                    # conn.send(b"\x05\x00\x00\x01", <B_HOST>, <B_PORT>")
+                                    returned_response = b"".join([b"\x05\x00\x00\x01", returned_address, returned_port])
+                                    bytes_sent = conn.send(returned_response)
+                                    print(ID, "sent {} bytes to client".format(bytes_sent))
+                                    print(ID, "creating socket")
+                                    forwarding_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-                                    # Then you create the CONNECT request and send it to
-                                    # the proxy. The Host header and Proxy-Connection headers
-                                    # have no meaning with CONNECT so you don't need to add them.
+                                    if requested_address[1] == 443: # if making a request on port 443 of target host
+                                        # For HTTPS connections:
+                                        # SSL handshake packet begins with b'\x16\x03\x01'
 
-                                    # Read the response from the proxy to the CONNECT request.
-                                    # If status code is not 200 something is wrong and you
-                                    # should close the connection to the client. There is no
-                                    # easy way to transfer the error information to the client.
 
-                                    # If status code is 200 forward the buffered ClientHello
-                                    # from the client to the server through the proxy and from
-                                    # then on forward everything between client and
-                                    # server (through the proxy tunnel).
+                                        # The initial handshake packet sent by the client is
+                                        # a Client Hello, and it is unencrypted and can be parsed normally.
 
+                                        # The server responds with a Server Hello packet
+                                        # and sends its certificate.
+                                        # This packet is also unencrypted and may be parsed notmally.
+
+                                        # The client creates and sends a Pre-Master-Secret
+                                        # encrypted with the public key from the server's certificate.
+                                        # The server and client each generate the Master-Secret and session keys
+                                        # based on the  Pre-Master-Secret.
+                                        # This packet is encrypted, which means it must be decrypted to be parsed.
+
+
+
+                                        # The way SSL works:
+                                        #   handshake
+                                        #   key exchange
+                                        #   data transfer
+
+                                        # HANDSHAKE
+                                        # The SSL handshake determines what version of SSL/TLS will be used,
+                                        # which cipher suite will encrypt communication,
+                                        # verifies the server and may also verify the client,
+                                        # and assures a secure connection for data transfer
+
+                                        # The handshake itself is only a preparation to the actual connection
+                                        # It uses asymmetric encryption (public and private key encryption system)
+                                        # public encrypts, and private key decrypts
+                                        # This kind of system carries too much overhead to be used constantly
+                                        # So public key encryption and private key decryption is used for the handshake only,
+                                        # during which, a shared key is set up and exchanged to use symmetric encryption throughout.
+
+                                        #The handshake protocol follows these steps:
+                                        # 1.  Client sends a Client Hello message to the server,
+                                        #         along with the client's random value
+                                        #         (also called nonce or challenge ) and
+                                        #         supported cipher suites.
+                                        # 2.  Server responds by sending a Server Hello message
+                                        #         to the client. Server too sends a random value
+                                        #         along with the Server Hello message
+                                        #         to avoid replay attacks..
+                                        # 3.  Server sends its Certificate to client for
+                                        #         authentication and may optionally request a
+                                        #         certificate from the client.
+                                        # 4.  Server sends the Server Hello Done message.
+                                        # 5.  If server has requested a certificate from
+                                        #         the client, the client sends it.
+                                        # 6.  Client creates and sends server a
+                                        #         Pre-Master-Secret encrypted with the public
+                                        #         key from the server's certificate.
+                                        # 7.  Server and client each generate the Master-Secret
+                                        #         and session keys based on the Pre-Master Secret.
+                                        # 8.  Client sends Change Cipher Spec notification to
+                                        #         server indicating it will start using the
+                                        #         new session keys for hashing and encrypting messages.
+                                        # 9.  Server sends Change Cipher Spec notification to Client.
+                                        # 10. Client and server can now exchange Application Data
+                                        #         over the secured channel encrypted using session key.
+
+
+                                        # Client Hello message:
+                                        # First byte (byte 1) b"\x16" is equivalent to 22 in decimal.
+                                        # This first byte is the content-type.
+                                        # 22 (or \x16) means "handshake"
+
+                                        # Next two bytes (bytes 2,3) (b"\x03\x01") are the TLS version
+                                        # b"\x03\x01" stands for TSL version 1.0
+
+                                        # Next two bytes (bytes 4,5) are the length
+                                        # b"\x02\x00" is 512
+
+                                        # Next byte (byte 6) is handshake type
+                                        # b"\x01" is Client Hello
+                                        # b"\x02" is Server Hello
+
+                                        # Next three bytes (bytes 7,8,9) are the length
+                                        # b"\x00\x01\xfc" is 508
+
+                                        # Next two bytes (bytes 10,11) are the version
+                                        # b"\x03\x03" is version TLS 1.2
+
+                                        # Next 32 bytes (bytes 12-42) are random values used for deriving keys
+
+                                        # Next byte (byte 43) is the length of the session id
+
+                                        # Next bytes are the session id
+                                        # the number bytes in this segment for the session id is given by the prior byte.
+                                        # The session id is an persistent identifier the client can use to resume the same
+                                        # session later when it sends the Client Hello.
+
+                                        # The next 2 bytes are the length of the list of cipher suites.
+                                        # 2 bytes are allotted for each suite id.
+                                        # So in the case of a cipher suites length of 32. There will be a list of 18 cipher suites.
+                                        # For example: Cipher suite TLS_RSA_WITH_AES_128_GCM_SHA256 is b"\x00\x9c"
+
+                                        # The next bytes are the cipher suites. The number of bytes here is given by the previous two bytes.
+
+                                        # Next byte is the length of the list of compression methods. 1 Byte is given per compression method
+
+                                        # The next bytes are the compression methods. The length of this segment of bytes is given by the previous byte.
+                                        # b"\x00" means "no compression method"
+
+                                        # The next two bytes are the length of the segment of bytes listing the extensions available.
+
+
+                                        # You generate the CONNECT request in your SOCKS proxy
+                                        # and therefore you should keep the response to this
+                                        # request to yourself and not forward it to the
+                                        # client. What you should do:
+                                        #
+                                        # If you receive the start of the SSL handshake from
+                                        # the client ("\x16\x03... ") you should buffer it.
+
+                                        # Then you create the CONNECT request and send it to
+                                        # the proxy. The Host header and Proxy-Connection headers
+                                        # have no meaning with CONNECT so you don't need to add them.
+
+                                        # Read the response from the proxy to the CONNECT request.
+                                        # If status code is not 200 something is wrong and you
+                                        # should close the connection to the client. There is no
+                                        # easy way to transfer the error information to the client.
+
+                                        # If status code is 200 forward the buffered ClientHello
+                                        # from the client to the server through the proxy and from
+                                        # then on forward everything between client and
+                                        # server (through the proxy tunnel).
+
+                                        # print(ID, "attempting to upgrade client socket to ssl socket")
+                                        # ssl_conn = ssl.wrap_socket(conn, ssl_version=ssl.PROTOCOL_TLS_SERVER, ciphers="ADH-AES256-SHA")
+
+                                        # context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+                                        # context.verify_mode = ssl.CERT_NONE
+                                        # context.check_hostname = False
+                                        # context.set_ciphers("ADH-AES256-SHA")
+                                        #
+                                        # print(ID, "Beginning SSL TCP socket connection")
+                                        # print(ID, "Wrapping socket using python's SSL wrapper")
+                                        # ssl_forwarding_socket = context.wrap_socket(forwarding_socket)
+                                        #
+                                        # print(ID, "binding SSL socket")
+                                        # ssl_forwarding_socket.bind(("0.0.0.0", 0))
+                                        # print(ID, "connecting ssl socket to ", requested_address)
+                                        # ssl_forwarding_socket.connect(requested_address)
+                                        #
+                                        # print(ID, "trying an SSL request to {}:{}...".format(requested_address[0],requested_address[1]))
+                                        # client_handshake = conn.recv(50000)
+                                        # print(ID, "client wants to send \n ::> ", client_handshake)
+                                        # ssl_forwarding_socket.send(client_handshake)
+                                        # v = ssl_forwarding_socket.recv(50000)
+                                        # print(ID, "target host returned \n ::> ", v)
+
+                                        print(ID, "Beginning SSL TCP socket connection")
+                                        print(ID, "binding socket")
+                                        forwarding_socket.bind(("0.0.0.0", 0))
+                                        print(ID, "connecting socket to ", requested_address)
+                                        forwarding_socket.connect(requested_address)
+                                        print(ID, "connecting SSL request to {}:{}...".format(requested_address[0],requested_address[1]))
+                                        print(ID, "starting loop")
+                                        # first_run = True
+                                        # while True:
+                                        #     print(ID, "getting from client")
+                                        #     client_request = conn.recv(50000) # HTTP request is seen here
+                                        #     if not client_request: break
+                                        #     print(ID, "got \n ::> ", client_request)
+                                        #     if client_request[5:6] == b"\x01" and client_request[0:1] == b"\x16":
+                                        #         print(ID, "Client sent Client Hello")
+                                        #
+                                        #     print(ID, "forwarding prior message to target serer ::> ", requested_address)
+                                        #     forwarding_socket.send(client_request)
+                                        #     client_request = None
+                                        #     while True:
+                                        #         # if client_request and first_run:
+                                        #         #     print(ID, "client is sending \n ::> ", client_request)
+                                        #         #     forwarding_socket.send(client_request)
+                                        #         #     first_run = False
+                                        #         print(ID, "getting data from target server ::> ", requested_address)
+                                        #         forwarding_data = forwarding_socket.recv(50000)
+                                        #         if not forwarding_data: break
+                                        #         print(ID, "target server {}:{} sent \n ::> ".format(requested_address[0],requested_address[1]), forwarding_data)
+                                        #         if forwarding_data[5:6] == b"\x02" and forwarding_data[0:1] == b"\x16":
+                                        #             print(ID, "Target server sent Server Hello")
+                                        #         print(ID, "forwarding above data from target server {}:{} to client".format(requested_address[0],requested_address[1]))
+                                        #         conn.send(forwarding_data)
+                                        #         forwarding_data = None
+                                        #         # if first_run:
+                                        #         #     print(ID, "getting response from client")
+                                        #         #     client_request = conn.recv(50000)
+                                        #     # break
+
+                                        while True:
+                                            print(ID, "getting from client")
+                                            client_request = conn.recv(50000) # HTTP request is seen here
+                                            if not client_request: break
+                                            print(ID, "got \n ::> ", client_request)
+                                            if client_request[5:6] == b"\x01" and client_request[0:1] == b"\x16":
+                                                print(ID, "Client sent Client Hello")
+
+                                            print(ID, "forwarding prior message to target serer ::> ", requested_address)
+                                            forwarding_socket.send(client_request)
+                                            client_request = None
+
+                                            print(ID, "getting data from target server ::> ", requested_address)
+                                            forwarding_data = forwarding_socket.recv(50000)
+                                            if not forwarding_data: break
+                                            print(ID, "target server {}:{} sent \n ::> ".format(requested_address[0],requested_address[1]), forwarding_data)
+                                            if forwarding_data[5:6] == b"\x02" and forwarding_data[0:1] == b"\x16":
+                                                print(ID, "Target server sent Server Hello")
+                                            print(ID, "forwarding above data from target server {}:{} to client".format(requested_address[0],requested_address[1]))
+                                            conn.send(forwarding_data)
+                                            forwarding_data = None
+
+                                    else:
+                                        # NON SSL request
+
+                                        print(ID, "Beginning NONSSL TCP socket connection")
+                                        print(ID, "binding socket")
+                                        forwarding_socket.bind(("0.0.0.0", 0))
+                                        print(ID, "connecting socket to ", requested_address)
+                                        forwarding_socket.connect(requested_address)
+                                        print(ID, "connecting nonSSL request to {}:{}...".format(requested_address[0],requested_address[1]))
+                                        print(ID, "starting loop")
+                                        while True:
+                                            print(ID, "getting from client")
+                                            client_request = conn.recv(50000) # HTTP request is seen here
+                                            if not client_request: break
+                                            print(ID, "got \n ::> ", client_request)
+
+                                            print(ID, "forwarding prior message to target serer ::> ", requested_address)
+                                            forwarding_socket.send(client_request)
+                                            while True:
+                                                print(ID, "getting data from target server ::> ", requested_address)
+                                                forwarding_data = forwarding_socket.recv(50000)
+                                                if not forwarding_data: break
+                                                print(ID, "target server {}:{} sent \n ::> ".format(requested_address[0],requested_address[1]), forwarding_data)
+                                                print(ID, "forwarding above data from target server {}:{} to client".format(requested_address[0],requested_address[1]))
+                                                conn.send(forwarding_data)
+                                            break
+                                else:
+                                    if requested_address[0] == "52.35.6.89":
+                                        print(ID, "blocked request to moxilla telemetry server")
+                                    elif requested_address[0] != "172.217.18.164":
+                                        print(ID, "blocked request to google server")
                             else:
                                 # domain name or ipv6 address
                                 pass
@@ -331,7 +540,7 @@ def handleConnection(conn, addr):
         pass
 
 
-
+# socket.setdefaulttimeout(15)
 while 1:
     conn, addr = s.accept() # blocking while waits for connection
     # s.accept returns a tuple of (conn, addr)
