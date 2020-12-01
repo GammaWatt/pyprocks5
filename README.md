@@ -1,8 +1,15 @@
-= USAGE =
+# LICENSE SUMMARY
+I dunno. Just don't act like you wrote this.
+
+I read a few blog posts and reference materials, learned how this 
+stuff works at a conceptual level and how it works in a general sense 
+and built it from there with a lot of trial and error.
+
+# USAGE
 
 python server.py
 
-= Extent of functionality =
+# Extent of functionality
 
 This thing completes the initial handshake with the client and forwards everything between the client and its target host address after that.
 
