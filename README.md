@@ -27,3 +27,5 @@ While it was possible to have the proxy serve as a MITM on my computer, (and pos
 
 I wanted the proxy server to be completely invisible, as far as the client is concerned.
 Decrypting the SSL communications, as would have been ideal, while maintaining that invisibility would require somehow stealing the private keys (at connection time) of each of the servers the client tries to connect to every time. That's more trouble than it's worth... and could make some people angry.
+
+I also tried to make it possible to toggle certain options and edit the blacklist while the server is running, but it doesn't seem to work...
