@@ -9,6 +9,11 @@
 # Helpful post
 # https://blog.zhaytam.com/2019/11/15/socks5-a-net-core-implementation-from-scratch/
 
+# Another helpful post 
+# (The comments about the bytes in the handshake 
+# packets are copied / paraphrased from this post)
+# https://medium.com/@vanrijn/an-overview-of-the-ssl-handshake-3885c37c3e0f
+
 import socket
 # Don't want to block wihle waiting for new connections.
 # So use threads and handle each new connection in threads.
